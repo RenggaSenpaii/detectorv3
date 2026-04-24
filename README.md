@@ -1,16 +1,36 @@
 # Recon Detector v3
 
-Recon automation tool:
-- crawler
-- dirscan
-- subdomain
-- port scan
-- endpoint analysis
+Recon automation tool for penetration testing.
+
+## Features
+- Crawler (HTML + JS + Param)
+- Directory Scanner
+- Subdomain Finder
+- Port Scanner
+- Endpoint Analysis
+
+## Installation
+git clone https://github.com/RenggaSenpaii/detectorv3.git
+cd detectorv3
+pip install -r requirements.txt
 
 ## Usage
+
+### Method 1 (Executable)
 chmod +x detectorv3
-./detectorv3
+./detectorv3 -u target.com -a
 
-or
+### Method 2 (Python)
+python3 detectorv3 -u target.com -a
 
-./detectorv3 -u target.com -m
+## Modes
+- basic
+- web fingerprint
+- sub
+- dir
+- crawl
+- auto
+- port
+
+## Disclaimer
+For educational and authorized testing only.
