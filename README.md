@@ -10,9 +10,9 @@ Recon automation tool for penetration testing.
 - Endpoint Analysis
 
 ## Installation
-git clone https://github.com/RenggaSenpaii/detectorv3.git
-cd detectorv3
-pip install -r requirements.txt
+- git clone https://github.com/RenggaSenpaii/detectorv3.git
+- cd detectorv3
+- pip install -r requirements.txt
 
 ## Usage
 
