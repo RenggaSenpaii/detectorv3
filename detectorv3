@@ -1,0 +1,975 @@
+#!/usr/bin/env python3
+import requests
+import socket
+import re
+import signal
+import json
+import argparse
+from colorama import Fore, Style, init
+
+init(autoreset=True)
+
+# =========================
+# GLOBAL
+# =========================
+STOP_FLAG = False
+crawler_results = []
+SAVE_FILE = "crawler_results.json"
+
+# =========================
+# BANNER
+# =========================
+def banner():
+    print(Fore.CYAN + """
+===========================================
+   ██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗
+   ██╔══██╗██╔════╝██╔════╝██╔═══██╗████╗  ██║
+   ██████╔╝█████╗  ██║     ██║   ██║██╔██╗ ██║
+   ██╔═══╝ ██╔══╝  ██║     ██║   ██║██║╚██╗██║
+   ██║     ███████╗╚██████╗╚██████╔╝██║ ╚████║
+   ╚═╝     ╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝
+===========================================
+""" + Style.RESET_ALL)
+
+    print(Fore.YELLOW + " Recon Detector v21")
+    print(Fore.GREEN + " Author>> RenggaSenpaii \n")
+
+# =========================
+# SIGNAL
+# =========================
+import sys
+
+def signal_handler(sig, frame):
+    global STOP_FLAG
+
+    if STOP_FLAG:  # kalau sudah stop → exit total
+        print(Fore.RED + "\n[EXIT]")
+        sys.exit(0)
+
+    STOP_FLAG = True
+    print(Fore.RED + "\n[!] Stopping... (Ctrl+C lagi untuk keluar)")
+
+# =========================
+# SAVE & LOAD
+# =========================
+def save_results():
+    try:
+        with open(SAVE_FILE, "w") as f:
+            json.dump(crawler_results, f)
+        print(Fore.GREEN + f"[SAVED] {len(crawler_results)} endpoint")
+    except:
+        print(Fore.RED + "[-] Gagal save")
+
+def load_results():
+    global crawler_results
+    try:
+        with open(SAVE_FILE, "r") as f:
+            crawler_results = json.load(f)
+        print(Fore.GREEN + f"[LOADED] {len(crawler_results)} endpoint")
+    except:
+        crawler_results = []
+
+# =========================
+# VALIDATOR
+# =========================
+def valid_domain(domain):
+    import re
+
+    # hanya huruf, angka, titik, dash
+    pattern = r"^[a-zA-Z0-9.-]+$"
+
+    if not re.match(pattern, domain):
+        return False
+
+    # minimal ada titik (domain.com)
+    if "." not in domain:
+        return False
+
+    return True
+
+
+def get_base_url(domain):
+    import requests
+
+    try:
+        r = requests.get(f"https://{domain}", timeout=5, allow_redirects=True)
+        return r.url.rstrip("/")
+    except:
+        return f"http://{domain}"
+
+# =========================
+# BASIC INFO
+# =========================
+def basic_info(domain):
+    print(Fore.CYAN + "\n[+] BASIC INFO (ADVANCED)")
+
+    # ================= IP & DNS =================
+    try:
+        ip = socket.gethostbyname(domain)
+        print(Fore.YELLOW + f"[IP] {ip}")
+
+        try:
+            rev = socket.gethostbyaddr(ip)
+            print(Fore.YELLOW + f"[REVERSE DNS] {rev[0]}")
+        except:
+            print(Fore.RED + "[REVERSE DNS] Tidak tersedia")
+
+    except:
+        print(Fore.RED + "[-] Gagal resolve domain")
+        return
+
+    # ================= GEO INFO =================
+    try:
+        r = requests.get(f"http://ip-api.com/json/{ip}", timeout=5).json()
+
+        print(Fore.CYAN + "\n[+] IP INFO")
+        print(Fore.GREEN + f"[COUNTRY] {r.get('country')}")
+        print(Fore.GREEN + f"[CITY] {r.get('city')}")
+        print(Fore.GREEN + f"[ISP] {r.get('isp')}")
+        print(Fore.GREEN + f"[ORG] {r.get('org')}")
+        print(Fore.GREEN + f"[ASN] {r.get('as')}")
+
+    except:
+        print(Fore.RED + "[-] Gagal ambil IP info")
+
+    # ================= HEADERS =================
+    try:
+        r = requests.get(f"http://{domain}", timeout=5)
+
+        print(Fore.CYAN + "\n[+] HTTP HEADERS")
+        for k, v in r.headers.items():
+            print(Fore.WHITE + f"{k:<20}: {v}")
+
+        # CDN detection
+        if "cloudflare" in r.headers.get("Server", "").lower():
+            print(Fore.MAGENTA + "\n[WARNING] Cloudflare terdeteksi (IP bukan server asli)")
+
+    except:
+        print(Fore.RED + "[-] Gagal ambil headers")
+
+# =========================
+# PORT SCAN
+# =========================
+def port_scan(domain):
+    import threading
+
+    print(Fore.CYAN + "\n[+] ADVANCED PORT SCAN (NMAP STYLE)")
+
+    ports = [
+        21,22,23,25,53,
+        80,110,139,143,
+        443,445,465,587,
+        993,995,1433,1521,
+        2082,2083,2086,2087,
+        2095,2096,2181,3000,
+        3306,3389,4444,5000,
+        5432,5601,5900,6379,
+        7001,8000,8008,8080,
+        8081,8443,8888,9000,
+        9090,9200,9999
+    ]
+
+    services = {
+        21: "FTP",
+        22: "SSH",
+        23: "TELNET",
+        25: "SMTP",
+        53: "DNS",
+        80: "HTTP",
+        110: "POP3",
+        139: "NETBIOS",
+        143: "IMAP",
+        443: "HTTPS",
+        445: "SMB",
+        465: "SMTPS",
+        587: "SMTP",
+        993: "IMAPS",
+        995: "POP3S",
+        1433: "MSSQL",
+        1521: "ORACLE",
+        3306: "MYSQL",
+        3389: "RDP",
+        5432: "POSTGRES",
+        6379: "REDIS",
+        8080: "HTTP-ALT",
+        8443: "HTTPS-ALT"
+    }
+
+    try:
+        ip = socket.gethostbyname(domain)
+    except:
+        print(Fore.RED + "[-] Gagal resolve IP")
+        return
+
+    open_ports = []
+    lock = threading.Lock()
+
+    def scan(port):
+        if STOP_FLAG:
+            return
+
+        try:
+            s = socket.socket()
+            s.settimeout(1)
+
+            if s.connect_ex((ip, port)) == 0:
+                service = services.get(port, "UNKNOWN")
+
+                banner = ""
+                try:
+                    s.send(b"HEAD / HTTP/1.0\r\n\r\n")
+                    banner = s.recv(100).decode(errors="ignore").strip()
+                except:
+                    pass
+
+                with lock:
+                    print(
+                        Fore.GREEN + f"[OPEN] Port {port} " +
+                        Fore.YELLOW + f"({service})"
+                    )
+
+                    if banner:
+                        print(Fore.MAGENTA + f"   └─ Banner: {banner[:80]}")
+
+                    open_ports.append(port)
+
+            s.close()
+
+        except:
+            pass
+
+    threads = []
+
+    for port in ports:
+        t = threading.Thread(target=scan, args=(port,))
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join()
+
+    print(Fore.CYAN + "\n[+] SUMMARY")
+    print(Fore.GREEN + f"Open ports: {len(open_ports)}")
+
+    if open_ports:
+        print(Fore.YELLOW + f"Ports: {', '.join(map(str, open_ports))}")
+
+# =========================
+# WEB FINGERPRINT
+# =========================
+def web_fingerprint(domain):
+    print(Fore.CYAN + "\n[+] WEB FINGERPRINT (ADVANCED)")
+
+    try:
+        r = requests.get(f"http://{domain}", timeout=5)
+        html = r.text.lower()
+
+        # ================= BASIC =================
+        title = re.findall(r"<title>(.*?)</title>", html)
+        if title:
+            print(Fore.GREEN + f"[TITLE] {title[0]}")
+
+        print(Fore.YELLOW + f"[SIZE] {len(r.text)} bytes")
+
+        # ================= SERVER =================
+        server = r.headers.get("Server", "")
+        if server:
+            print(Fore.WHITE + f"[SERVER] {server}")
+
+        # ================= CMS DETECTION =================
+        if "wp-content" in html or "wp-includes" in html:
+            print(Fore.MAGENTA + "[CMS] WordPress")
+
+        # ================= FRAMEWORK =================
+        cookies = str(r.cookies).lower()
+
+        if "laravel" in cookies or "xsrf-token" in cookies:
+            print(Fore.MAGENTA + "[FRAMEWORK] Laravel")
+
+        if "php" in server.lower():
+            print(Fore.MAGENTA + "[LANGUAGE] PHP")
+
+        # ================= SECURITY HEADERS =================
+        print(Fore.CYAN + "\n[+] SECURITY HEADERS")
+
+        sec_headers = [
+            "x-frame-options",
+            "x-xss-protection",
+            "x-content-type-options",
+            "strict-transport-security",
+            "content-security-policy"
+        ]
+
+        for h in sec_headers:
+            if h in r.headers:
+                print(Fore.GREEN + f"[FOUND] {h}: {r.headers[h]}")
+            else:
+                print(Fore.RED + f"[MISSING] {h}")
+
+        # ================= CDN DETECTION =================
+        if "cloudflare" in server.lower():
+            print(Fore.YELLOW + "\n[WARNING] Cloudflare detected")
+
+    except Exception as e:
+        print(Fore.RED + f"[-] Error: {e}")
+
+# =========================
+# SUBDOMAIN
+# =========================
+def subdomain_scan(domain):
+    import threading
+
+    print(Fore.CYAN + "\n[+] SUBDOMAIN SCAN")
+
+    found = set()
+    lock = threading.Lock()
+
+    # =========================
+    # 1. CRT.SH
+    # =========================
+    print(Fore.YELLOW + "[INFO] crt.sh...")
+
+    try:
+        url = f"https://crt.sh/?q=%25.{domain}&output=json"
+        r = requests.get(url, timeout=10)
+
+        if r.status_code == 200:
+            data = r.json()
+
+            for entry in data:
+                names = entry.get("name_value", "").split("\n")
+
+                for sub in names:
+                    sub = sub.strip().lower().replace("*.", "")
+
+                    if domain in sub:
+                        with lock:
+                            if sub not in found:
+                                print(Fore.GREEN + f"[CRT] {sub}")
+                                found.add(sub)
+    except:
+        pass
+
+    # =========================
+    # 2. HACKERTARGET
+    # =========================
+    print(Fore.YELLOW + "[INFO] hackertarget...")
+
+    try:
+        url = f"https://api.hackertarget.com/hostsearch/?q={domain}"
+        r = requests.get(url, timeout=10)
+
+        for line in r.text.splitlines():
+            sub = line.split(",")[0]
+
+            if domain in sub:
+                with lock:
+                    if sub not in found:
+                        print(Fore.GREEN + f"[API] {sub}")
+                        found.add(sub)
+    except:
+        pass
+
+    # =========================
+    # 3. RAPIDDNS
+    # =========================
+    print(Fore.YELLOW + "[INFO] rapiddns...")
+
+    try:
+        url = f"https://rapiddns.io/subdomain/{domain}?full=1"
+        r = requests.get(url, timeout=10)
+
+        subs = re.findall(rf'>([a-zA-Z0-9_\-\.]+\.{domain})<', r.text)
+
+        for sub in subs:
+            with lock:
+                if sub not in found:
+                    print(Fore.GREEN + f"[RAPID] {sub}")
+                    found.add(sub)
+    except:
+        pass
+
+    # =========================
+    # 4. THREATCROWD
+    # =========================
+    print(Fore.YELLOW + "[INFO] threatcrowd...")
+
+    try:
+        url = f"https://www.threatcrowd.org/searchApi/v2/domain/report/?domain={domain}"
+        r = requests.get(url, timeout=10).json()
+
+        for sub in r.get("subdomains", []):
+            with lock:
+                if sub not in found:
+                    print(Fore.GREEN + f"[TC] {sub}")
+                    found.add(sub)
+    except:
+        pass
+
+    # =========================
+    # 5. BRUTEFORCE
+    # =========================
+    print(Fore.YELLOW + "[INFO] bruteforce...")
+
+    subs = [
+        "www","mail","ftp","webmail","admin","test","dev","api",
+        "beta","staging","portal","vpn","cpanel","whm","ns1","ns2",
+        "blog","shop","support","secure","gateway","m","mobile",
+        "app","cdn","static","img","assets","data","db","backup",
+        "old","new","demo","internal","intranet","auth","sso"
+    ]
+
+    def scan(sub):
+        if STOP_FLAG:
+            return
+
+        try:
+            full = f"{sub}.{domain}"
+            socket.gethostbyname(full)
+
+            with lock:
+                if full not in found:
+                    print(Fore.GREEN + f"[BRUTE] {full}")
+                    found.add(full)
+
+        except:
+            pass
+
+    threads = []
+
+    for s in subs:
+        if STOP_FLAG:
+            break
+
+        t = threading.Thread(target=scan, args=(s,))
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join()
+
+    # =========================
+    # FINAL RESULT
+    # =========================
+    print(Fore.CYAN + "\n[+] FINAL RESULT")
+    print(Fore.GREEN + f"Total unik ditemukan: {len(found)}")
+
+# =========================
+# DIRECTORY SCAN
+# =========================
+def dir_scan(domain):
+    import asyncio
+    import aiohttp
+    import random
+
+    print(Fore.CYAN + "\n[+] DIRSCAN ASYNC")
+
+    base_url = get_base_url(domain)
+
+    USER_AGENTS = [
+        "Mozilla/5.0",
+        "Chrome/120.0",
+        "Safari/537.36",
+        "Firefox/115.0"
+    ]
+
+    def rand_headers():
+        return {
+            "User-Agent": random.choice(USER_AGENTS),
+            "Accept": "text/html"
+        }
+
+    # =========================
+    # WORDLIST
+    # =========================
+    try:
+        with open("/usr/share/seclists/Discovery/Web-Content/common.txt") as f:
+            words = [x.strip() for x in f.readlines()]
+        print(Fore.GREEN + f"[INFO] Wordlist: {len(words)}")
+    except:
+        words = ["admin","login","dashboard","api","backup"]
+
+    exts = ["", ".php", ".bak", ".zip", ".txt"]
+
+    # =========================
+    # ASYNC SCAN
+    # =========================
+    async def scan(session, path, base_size):
+        if STOP_FLAG:
+            return
+
+        url = f"{base_url}/{path}"
+
+        try:
+            async with session.get(url, headers=rand_headers(), timeout=5) as r:
+                text = await r.text()
+                size = len(text)
+
+                if abs(size - base_size) < 20:
+                    return
+
+                if STOP_FLAG:
+                    return
+
+                if r.status == 200:
+                    print(Fore.GREEN + f"[200] {url} [{size}]")
+                elif r.status in [301,302]:
+                    print(Fore.YELLOW + f"[REDIRECT] {url}")
+                elif r.status == 403:
+                    print(Fore.MAGENTA + f"[403] {url}")
+                else:
+                    print(Fore.WHITE + f"[{r.status}] {url}")
+
+        except:
+            pass
+
+    async def main():
+        timeout = aiohttp.ClientTimeout(total=5)
+
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+
+            # baseline
+            try:
+                async with session.get(base_url, headers=rand_headers()) as r:
+                    base_text = await r.text()
+                    base_size = len(base_text)
+                    print(Fore.YELLOW + f"[BASELINE] {base_size}")
+            except:
+                base_size = 0
+
+            tasks = []
+
+            for w in words:
+                if STOP_FLAG:
+                    break
+
+                for e in exts:
+                    path = w + e
+                    tasks.append(scan(session, path, base_size))
+
+            # jalankan async batch
+            try:
+                await asyncio.gather(*tasks)
+            except asyncio.CancelledError:
+                pass
+
+    # =========================
+    # RUN LOOP
+    # =========================
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        global STOP_FLAG
+        STOP_FLAG = True
+        print(Fore.RED + "\n[!] Scan stopped instantly")
+
+    print(Fore.CYAN + "\n[+] DONE")
+
+# =========================
+# CRAWLER
+# =========================
+def crawler(domain):
+    import requests
+    import re
+    from urllib.parse import urljoin, urlparse
+
+    global crawler_results, STOP_FLAG
+    STOP_FLAG = False
+    crawler_results = []
+
+    print(Fore.CYAN + "\n[+] CRAWLER")
+
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+
+    visited = set()
+    js_files = set()
+
+    base = get_base_url(domain)
+
+    base_urls = [base]
+
+    def fetch(url):
+        try:
+            r = requests.get(url, headers=headers, timeout=5, allow_redirects=True)
+            return r.text
+        except:
+            return ""    
+
+    # =========================
+    # STEP 1: HTML CRAWL
+    # =========================
+    for b in base_urls:
+        html = fetch(b)
+        if STOP_FLAG:
+            break
+
+        print(Fore.YELLOW + f"[VISIT] {b}")
+
+        # ambil href
+        links = re.findall(r'href=["\'](.*?)["\']', html)
+
+        # ambil JS file
+        scripts = re.findall(r'src=["\'](.*?\.js[^"\']*)["\']', html)
+
+        for link in links:
+            full = urljoin(b, link)
+
+             # FILTER STATIC FILE
+            if any(full.lower().endswith(ext) for ext in [".png",".jpg",".jpeg",".css",".js",".woff",".svg",".ico"]):
+                continue
+
+            if domain in full:
+                full = full.split("#")[0]
+
+                if full not in crawler_results:
+                    print(Fore.GREEN + f"[URL] {full}")
+                    crawler_results.append(full)
+
+        for js in scripts:
+            full = urljoin(b, js)
+            if domain in full:
+                print(Fore.MAGENTA + f"[JS] {full}")
+                js_files.add(full)
+
+    # =========================
+    # STEP 2: JS PARSE
+    # =========================
+    print(Fore.CYAN + "\n[+] JS ANALYSIS")
+
+    param_urls = set()
+
+    for js in js_files:
+        if STOP_FLAG:
+            break
+
+        print(Fore.YELLOW + f"[FETCH JS] {js}")
+
+        content = fetch(js)
+
+        # pastikan content ada
+        if not content:
+            continue
+
+        # =========================
+        # ENDPOINT
+        # =========================
+        endpoints = re.findall(r'["\'](/[^"\']+)["\']', content)
+
+        for ep in endpoints:
+            full = f"{base.rstrip('/')}{ep}"
+
+            if ep.strip() in ["//", "/", ""]:
+                continue
+
+            if any(x in ep for x in [",", ">", "<", "(", ")", " "]):
+                continue
+
+            if len(ep.strip()) < 2:
+                continue
+
+            if len(ep) < 4:
+                continue
+
+            if domain in full and full not in crawler_results:
+                print(Fore.GREEN + f"[JS-ENDPOINT] {full}")
+                crawler_results.append(full)
+
+        # =========================
+        # PARAM FULL
+        # =========================
+        matches = re.findall(r'["\'](/[^"\']*\?[^\s"\']+)["\']', content)
+
+        for m in matches:
+            full = f"{base.rstrip('/')}{m}"
+
+            if domain in full:
+                print(Fore.GREEN + f"[JS-PARAM] {full}")
+                crawler_results.append(full)
+                param_urls.add(full)
+
+        # =========================
+        # PARAM GUESS (FILTERED)
+        # =========================
+        params = re.findall(r'([a-zA-Z0-9_]{3,})=', content)
+
+        blacklist = list(set([
+            "function","return","var","let","const",
+            "true","false","null","undefined",
+            "class","style","width","height",
+            "color","background","transition",
+            "index","constructor","prototype",
+            "jquery","guid","data","queue","hidden",
+            "minwidth","maxwidth","sliding","slide",
+            "scrollbar","scrollbarwidth",
+            "pagex","pagey",
+            "unique","uniquesort","tokenize",
+            "acceptdata","getbyid","getuid","qsa"
+        ]))    
+
+        for p in params:
+            if p.lower() in blacklist:
+                continue
+
+            if len(p) < 4:
+                continue
+
+            if any(x in p.lower() for x in ["id","user","token","search","q","page","data","api"]):
+                guess = f"{base}/?{p}="
+                
+                if guess not in param_urls:
+                    print(Fore.YELLOW + f"[VALID-PARAM] {guess}")
+                    param_urls.add(guess)
+    
+    # =========================
+    # STEP 3: PARAM REPORT
+    # =========================
+    print(Fore.CYAN + "\n[+] PARAM URL FOUND")
+
+    for u in param_urls:
+        print(Fore.RED + f"[PARAM] {u}")
+
+    # =========================
+    # FALLBACK (kalau kosong)
+    # =========================
+    if len(crawler_results) == 0:
+        print(Fore.YELLOW + "[INFO] fallback aktif")
+
+        fallback = [
+            "/login","/dashboard","/api",
+            "/admin","/user","/search"
+        ]
+
+        for f in fallback:
+            url = f"{base}{f}"
+            print(Fore.GREEN + f"[GUESS] {url}")
+            crawler_results.append(url)
+
+    print(Fore.CYAN + "\n[+] FINAL SUMMARY")
+
+    print(Fore.GREEN + f"[ENDPOINT] {len(crawler_results)}")
+    print(Fore.YELLOW + f"[PARAM] {len(param_urls)}")
+    print(Fore.MAGENTA + f"[JS FILE] {len(js_files)}")  
+
+# =========================
+# AUTO SCAN
+# =========================
+def endpoint_analysis(domain):
+    import requests
+    import re
+
+    global crawler_results
+
+    print(Fore.CYAN + "\n[+] ENDPOINT ANALYSIS")
+
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+
+    if not crawler_results:
+        print(Fore.YELLOW + "[INFO] Tidak ada data crawler → jalankan crawler dulu")
+        return
+
+    for url in crawler_results:
+
+        try:
+            r = requests.get(url, headers=headers, timeout=5, allow_redirects=True)
+            html = r.text.lower()
+            size = len(r.text)
+
+            # ambil title
+            title = ""
+            t = re.findall(r"<title>(.*?)</title>", html)
+            if t:
+                title = t[0]
+
+            label = []
+
+            # =========================
+            # DETECTION LOGIC
+            # =========================
+
+            # LOGIN DETECT
+            if any(x in url for x in ["login", "signin", "auth"]):
+                label.append("LOGIN")
+
+            if "password" in html:
+                label.append("LOGIN_FORM")
+
+            # API DETECT
+            if "api" in url or "json" in html:
+                label.append("API")
+
+            # INTERESTING PATH
+            if any(x in url for x in [
+                "admin","dashboard","panel","cpanel",
+                "upload","file","config","backup"
+            ]):
+                label.append("INTERESTING")
+
+            # =========================
+            # OUTPUT
+            # =========================
+            if label:
+                print(
+                    Fore.GREEN + f"[{','.join(label)}] " +
+                    Fore.WHITE + f"{url} " +
+                    Fore.YELLOW + f"({r.status_code}) [{size}] " +
+                    Fore.CYAN + f"{title}"
+                )
+            else:
+                print(
+                    Fore.WHITE + f"[NORMAL] {url} ({r.status_code})"
+                )
+
+        except:
+            pass
+
+    print(Fore.CYAN + "\n[+] DONE")
+
+# =========================
+# MENU
+# =========================
+def menu():
+    print(Fore.BLUE + """
+1. Basic Info
+2. Web Fingerprint
+3. Subdomain Scan
+4. Directory Scan
+5. Crawler
+6. Auto Scan
+7. Port Scan
+0. Exit
+""")
+
+# =========================
+# MAIN
+# =========================
+def cli_args():
+    parser = argparse.ArgumentParser(description="Recon Detector CLI")
+
+    parser.add_argument("-u", "--url", help="Target domain")
+    parser.add_argument("-m", "--mode", help="Mode scan")
+    parser.add_argument("-a", "--auto", action="store_true", help="Full auto scan")
+    return parser.parse_args()
+
+if __name__ == "__main__":
+    banner()
+
+    args = cli_args()
+# =========================
+# AUTO FULL SCAN
+# =========================
+
+
+    # =========================
+    # CLI MODE
+    # =========================
+    if args.url:
+
+        # AUTO MODE
+        if args.auto:
+            target = args.url
+
+            print(Fore.YELLOW + f"[AUTO MODE] {target}")
+
+            basic_info(target)
+            web_fingerprint(target)
+            subdomain_scan(target)
+            dir_scan(target)
+            crawler(target)
+            endpoint_analysis(target)
+            port_scan(target)
+
+            print(Fore.GREEN + "\n[✓] FULL SCAN SELESAI")
+            exit()
+
+        # SINGLE MODE
+        elif args.mode:
+            target = args.url
+            mode = args.mode
+
+            print(Fore.YELLOW + f"[CLI MODE] {target} | {mode}")
+
+            if mode == "1" or mode == "basic":
+                basic_info(target)
+
+            elif mode == "2" or mode == "finger":
+                web_fingerprint(target)
+
+            elif mode == "3" or mode == "sub":
+                subdomain_scan(target)
+
+            elif mode == "4" or mode == "dir":
+                dir_scan(target)
+
+            elif mode == "5" or mode == "crawl":
+                crawler(target)
+
+            elif mode == "6" or mode == "auto":
+                endpoint_analysis(target)
+
+            elif mode == "7" or mode == "port":
+                port_scan(target)
+
+            else:
+                print("[!] Mode tidak dikenal")
+
+            exit()
+
+
+# =====================
+# INTERAKTIF MODE
+# =====================
+    print(Fore.YELLOW + "[INFO] Gunakan format: domain.com (tanpa http/https)")
+
+    while True:
+        try:
+            target = input(Fore.CYAN + "[?] Target : ")
+        except KeyboardInterrupt:
+            print(Fore.RED + "\n[Bye-bye]")
+            exit()
+
+        if not valid_domain(target):
+            print(Fore.RED + "[!] Format domain salah! contoh: domain.com")
+            continue
+
+        break
+
+    while True:
+        STOP_FLAG = False
+        menu()
+        try:
+            c = input(">> ")
+        except KeyboardInterrupt:
+            print(Fore.RED + "\n[Bye-bye]")
+            break
+
+        if c == "1":
+            basic_info(target)
+
+        elif c == "2":
+            web_fingerprint(target)
+
+        elif c == "3":
+            subdomain_scan(target)
+
+        elif c == "4":
+            dir_scan(target)
+
+        elif c == "5":
+            crawler(target)
+
+        elif c == "6":
+           endpoint_analysis(target)
+
+        elif c == "7":
+            port_scan(target)
+
+        elif c == "0":
+            print(Fore.RED + "\n [Bye-bye]")
+            break
+
+        else:
+            print(Fore.RED + "[!] Pilihan tidak valid")
