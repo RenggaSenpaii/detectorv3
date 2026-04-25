@@ -20,18 +20,20 @@ SAVE_FILE = "crawler_results.json"
 # BANNER
 # =========================
 def banner():
-    print(Fore.CYAN + """
-===========================================
-   ██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗
-   ██╔══██╗██╔════╝██╔════╝██╔═══██╗████╗  ██║
-   ██████╔╝█████╗  ██║     ██║   ██║██╔██╗ ██║
-   ██╔═══╝ ██╔══╝  ██║     ██║   ██║██║╚██╗██║
-   ██║     ███████╗╚██████╗╚██████╔╝██║ ╚████║
-   ╚═╝     ╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝
-===========================================
+    print(Fore.CYAN + r"""
+╔═════════════════════════════════════════════════════╗
+
+      ██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗
+      ██╔══██╗██╔════╝██╔════╝██╔═══██╗████╗  ██║
+      ██████╔╝█████╗  ██║     ██║   ██║██╔██╗ ██║
+      ██╔══██╗██╔══╝  ██║     ██║   ██║██║╚██╗██║
+      ██║  ██║███████╗╚██████╗╚██████╔╝██║ ╚████║
+      ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝
+                                 D E T E C T O R
+╚═════════════════════════════════════════════════════╝
 """ + Style.RESET_ALL)
 
-    print(Fore.YELLOW + " Recon Detector v21")
+    print(Fore.GREEN + " Recon Detector v3")
     print(Fore.GREEN + " Author>> RenggaSenpaii \n")
 
 # =========================
@@ -42,7 +44,7 @@ import sys
 def signal_handler(sig, frame):
     global STOP_FLAG
 
-    if STOP_FLAG:  # kalau sudah stop → exit total
+    if STOP_FLAG:  
         print(Fore.RED + "\n[EXIT]")
         sys.exit(0)
 
@@ -75,13 +77,11 @@ def load_results():
 def valid_domain(domain):
     import re
 
-    # hanya huruf, angka, titik, dash
     pattern = r"^[a-zA-Z0-9.-]+$"
 
     if not re.match(pattern, domain):
         return False
 
-    # minimal ada titik (domain.com)
     if "." not in domain:
         return False
 
@@ -140,7 +140,6 @@ def basic_info(domain):
         for k, v in r.headers.items():
             print(Fore.WHITE + f"{k:<20}: {v}")
 
-        # CDN detection
         if "cloudflare" in r.headers.get("Server", "").lower():
             print(Fore.MAGENTA + "\n[WARNING] Cloudflare terdeteksi (IP bukan server asli)")
 
@@ -547,7 +546,6 @@ def dir_scan(domain):
                     path = w + e
                     tasks.append(scan(session, path, base_size))
 
-            # jalankan async batch
             try:
                 await asyncio.gather(*tasks)
             except asyncio.CancelledError:
@@ -607,16 +605,13 @@ def crawler(domain):
 
         print(Fore.YELLOW + f"[VISIT] {b}")
 
-        # ambil href
         links = re.findall(r'href=["\'](.*?)["\']', html)
 
-        # ambil JS file
         scripts = re.findall(r'src=["\'](.*?\.js[^"\']*)["\']', html)
 
         for link in links:
             full = urljoin(b, link)
 
-             # FILTER STATIC FILE
             if any(full.lower().endswith(ext) for ext in [".png",".jpg",".jpeg",".css",".js",".woff",".svg",".ico"]):
                 continue
 
@@ -648,7 +643,6 @@ def crawler(domain):
 
         content = fetch(js)
 
-        # pastikan content ada
         if not content:
             continue
 
@@ -778,7 +772,6 @@ def endpoint_analysis(domain):
             html = r.text.lower()
             size = len(r.text)
 
-            # ambil title
             title = ""
             t = re.findall(r"<title>(.*?)</title>", html)
             if t:
@@ -790,18 +783,15 @@ def endpoint_analysis(domain):
             # DETECTION LOGIC
             # =========================
 
-            # LOGIN DETECT
             if any(x in url for x in ["login", "signin", "auth"]):
                 label.append("LOGIN")
 
             if "password" in html:
                 label.append("LOGIN_FORM")
 
-            # API DETECT
             if "api" in url or "json" in html:
                 label.append("API")
 
-            # INTERESTING PATH
             if any(x in url for x in [
                 "admin","dashboard","panel","cpanel",
                 "upload","file","config","backup"
